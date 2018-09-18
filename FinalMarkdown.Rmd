@@ -1,0 +1,152 @@
+---
+output:
+  html_document: default
+---
+---
+title: "FinalReportSeedBox"
+author: "Foojan Jahanian"
+date: "September 17, 2018"
+output: html_document
+
+
+First we start by importing our data:
+
+
+```{r}
+transdata<-read.csv('/users/vince/Desktop/transData.csv', row.names=1)
+head(transdata)
+testsample<-read.csv('/users/vince/Desktop/testSamples.csv', header = T, sep=",")
+head(testsample)
+##rename first column
+names(testsample)[1]<-c("sample_id")
+```
+
+Question 1:
+What is the aproximate probability distribution between the test group and the control group?
+  
+We know that we have a binominal distribution and by counting we will have the probability of success which will be landing on the phone page (p) and the probability of failur which is landing on the email page will be (q=1-p)
+As the number of events (n) is large enough, according to Central Limit Theorim  we can approximate this binominal distribution with a normal distribution with mean=n.p and standard deviation =(n.p.q)^0.5
+
+```{r}
+##we will count the number of events using the table function
+
+table(testsample$test_group)
+p<-14835/(14835+44886)
+q<-1-p
+n<-nrow(testsample)
+MEAN=n*p
+SD=(n*p*q)^0.5
+print(paste("p=",p))
+print(paste("q=",q))
+print(paste("mean=",MEAN))
+print(paste ("SD=", SD))
+
+
+
+```
+ 
+ To do further analysis we will mereg the two datasets that we have 
+
+```{r}
+mydata<-merge(testsample, transdata, all.x = TRUE)
+head(mydata, n=20)
+
+```  
+
+Question 2:
+ 
+Is a user that must call-in to cancel more likely to generate at least 1 addition REBILL? 
+
+```{r}
+##we will subset our data
+mydata_rebill<-mydata[c(1,2,3)]
+head(mydata_rebill,30)
+str(mydata_rebill)
+levels(mydata_rebill$transaction_type)
+```
+
+Data shows that we have duplicate sample_ids which belongs to visitors who have generated more than one rebill. As we are looking for the visitors who have generated at least one rebill we can get rid of the duplicate rows inorder to avoid counting them more than once. Then we will count those visitors by using the table function.
+```{r}
+##Removing duplicate rows
+mydata_rebill_unique<-mydata_rebill[!duplicated(mydata_rebill),]
+head(mydata_rebill_unique, 20)
+##Counting
+t<-table(mydata_rebill_unique$test_group, mydata_rebill_unique$transaction_type, useNA = 'ifany')
+t
+
+
+
+```
+
+The table shows that the number of users generating at least one rebill is higher in the testgroup (phone group) than the control group (email group). We will conduct a chi square test to see if getting at least one rebill is independent from the test groups.
+```{r}
+
+chisq.test(t)
+t1<-table(mydata_rebill_unique$test_group, mydata_rebill_unique$transaction_type)
+t1
+chisq.test(t1)
+
+```
+
+Both tests had a p-value smaller than 0.05 which indicates that the results are statically significant. So we can say that users from test group (phone group) are more likely to generate at least one rebill.
+
+
+Question 3: 
+
+Is a user that must call-in to cancel more likely to generate more revenues?
+
+```{r}
+##First we subset our dataset
+mydata_revenue<-mydata[c(1,2,4)]
+head(mydata_revenue,20)
+##We will replace the NA in transaction_amount column with 0 as absence of transaction can be equal to 0 in value
+mydata_revenue[is.na(mydata_revenue)] <- 0
+##We would like to know the total amount of transaction per user
+revenue<-aggregate( mydata_revenue$transaction_amount, by=list(category=mydata_revenue$sample_id),FUN= sum)
+head(revenue, 20)
+##Changing the column names
+names(revenue)<-c('sample_id', 'total')
+## Now we will merge two tables to know the test group for each user
+revenue1<-merge(testsample, revenue, by='sample_id')
+head(revenue1,20)
+## We will seperate our data based on the two test groups that we have 
+revenue_phone<-revenue1[revenue1$test_group=='1',]
+head(revenue_phone)
+revenue_email<-revenue1[revenue1$test_group=='0',]
+head(revenue_email,20)
+## We will run a t-test To verify if the mean of the transactions in the test group is significantely higher than the control group
+t.test(revenue_phone$total,revenue_email$total, alternative='greater')
+```
+
+The p-value is smaller than 0.05 which means that we can reject the Null hypothesis and conclude that the mean for test group(phone group) is higher than the control group. So a user that must call-in to cancel is more likely to generate more revenues.
+
+```{r , echo=FALSE}
+library(ggplot2)
+mydataplot<-merge(testsample, transdata)
+mydata_revenueplot<-mydata[c(1,2,4)]
+boxplot(transaction_amount ~test_group, data=mydata_revenueplot, main="Revenue generated from two groups", col=c('deeppink1', 'green4'))
+
+
+```
+
+Question 4:
+
+Is a user that must call-in more likely to produce a higher chargeback rate(CHARGEBACKs/REBILLs)?
+
+```{r}
+t2<-table(mydata_rebill$test_group, mydata_rebill$transaction_type)
+t2
+chargebackrate<-t2[,1]/t2[,2]
+chargebackrate<-as.data.frame(chargebackrate)
+str(chargebackrate)
+chargebackrate<- cbind(c(0,1), chargebackrate)
+names(chargebackrate)<-c( 'test_group', 'chargeback_rate')
+chargebackrate
+t.test(chargebackrate)
+```
+
+The p-value is larger than 0.05.We also see that confidence interval includes 0.
+We can say that the results are not statically significant. So we cannot say that a user that must call-in is more likely to produce a higher chargeback rate.
+
+
+
